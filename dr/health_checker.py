@@ -29,13 +29,54 @@ URL = {"a": "http://127.0.0.1:8001", "b": "http://127.0.0.1:8002"}
 
 
 def probe(region: str, timeout: float) -> tuple[bool, str]:
-    """TODO: trả về (ready, reason). Timeout PHẢI có — netblock làm request treo mãi."""
-    raise NotImplementedError
+    """(ready, reason). Dung /readyz; timeout bat buoc vi netblock lam request treo."""
+    try:
+        r = httpx.get(f"{URL[region]}/readyz", timeout=timeout)
+    except httpx.TimeoutException:
+        return False, "timeout"
+    except Exception as e:
+        return False, type(e).__name__
+    if r.status_code == 200:
+        return True, "ok"
+    try:
+        reasons = r.json().get("reasons")
+    except Exception:
+        reasons = None
+    return False, f"http_{r.status_code}" + (f": {','.join(reasons)}" if reasons else "")
 
 
 def run(interval: float, timeout: float, threshold: int, duration: float, out: pathlib.Path):
-    """TODO: vòng lặp poll + phát hiện transition + ghi JSONL."""
-    raise NotImplementedError
+    """Poll ca 2 region; chi doi trang thai sau `threshold` lan fail LIEN TIEP."""
+    out.parent.mkdir(parents=True, exist_ok=True)
+    state = {r: "HEALTHY" for r in URL}   # gia dinh healthy luc bat dau
+    fails = {r: 0 for r in URL}
+    passes = {r: 0 for r in URL}
+    end = time.time() + duration
+    with out.open("a", encoding="utf-8") as f:
+        while time.time() < end:
+            t0 = time.time()
+            for region in URL:
+                ok, reason = probe(region, timeout)
+                if ok:
+                    fails[region] = 0
+                    passes[region] += 1
+                else:
+                    passes[region] = 0
+                    fails[region] += 1
+                new = None
+                if not ok and state[region] == "HEALTHY" and fails[region] >= threshold:
+                    new = "UNHEALTHY"
+                elif ok and state[region] == "UNHEALTHY" and passes[region] >= threshold:
+                    new = "HEALTHY"
+                if new:
+                    state[region] = new
+                    ev = {"ts": time.time(), "event": "state_change", "region": region,
+                          "to": new, "reason": reason, "interval_s": interval,
+                          "threshold": threshold, "consecutive_fails": fails[region]}
+                    f.write(json.dumps(ev) + "\n")
+                    f.flush()
+                    print(json.dumps(ev), flush=True)
+            time.sleep(max(0.0, interval - (time.time() - t0)))
 
 
 if __name__ == "__main__":

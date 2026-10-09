@@ -1,0 +1,4 @@
+{"ts": 1791520319.7575395, "event": "state_change", "region": "b", "to": "UNHEALTHY", "reason": "http_503: pool_state=warm,model_weights_missing,vector_db_empty(count=0)", "interval_s": 5.0, "threshold": 3, "consecutive_fails": 3}
+{"ts": 1791520336.4747863, "event": "state_change", "region": "a", "to": "UNHEALTHY", "reason": "timeout", "interval_s": 5.0, "threshold": 3, "consecutive_fails": 3}
+{"ts": 1791520359.8307922, "event": "state_change", "region": "b", "to": "HEALTHY", "reason": "ok", "interval_s": 5.0, "threshold": 3, "consecutive_fails": 0}
+{"ts": 1791520369.5245292, "event": "state_change", "region": "a", "to": "HEALTHY", "reason": "ok", "interval_s": 5.0, "threshold": 3, "consecutive_fails": 0}

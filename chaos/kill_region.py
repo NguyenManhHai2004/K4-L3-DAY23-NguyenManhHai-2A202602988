@@ -63,7 +63,19 @@ def is_alive(region: str, timeout=1.5) -> bool:
         return False
 
 
+PORT = {"a": 8001, "b": 8002}
+IS_WIN = os.name == "nt"
+
+
 def pid_of(region: str) -> int | None:
+    if IS_WIN:
+        # Windows: PID trong file .pid la PID cua Git Bash (khong phai PID Windows) va
+        # os.kill(pid, 0) tren Windows se TerminateProcess -> tim PID that qua cong dang listen.
+        import psutil
+        for c in psutil.net_connections(kind="tcp"):
+            if c.status == psutil.CONN_LISTEN and c.laddr.port == PORT[region] and c.pid:
+                return c.pid
+        return None
     f = PID_DIR / f"region-{region}.pid"
     if not f.exists():
         return None
@@ -73,6 +85,16 @@ def pid_of(region: str) -> int | None:
         return pid
     except OSError:
         return None
+
+
+def _signal(pid: int, sig: str):
+    """sig: STOP | CONT | KILL. Windows khong co SIGSTOP/SIGCONT -> dung psutil suspend/resume."""
+    if IS_WIN:
+        import psutil
+        p = psutil.Process(pid)
+        {"STOP": p.suspend, "CONT": p.resume, "KILL": p.kill}[sig]()
+    else:
+        os.kill(pid, getattr(signal, "SIG" + sig))
 
 
 def kill(region: str, mode: str, backend: str, force_both: bool, mock: bool):
@@ -96,7 +118,7 @@ def kill(region: str, mode: str, backend: str, force_both: bool, mock: bool):
         # netblock: SIGSTOP -> TCP handshake vẫn xong nhưng không ai trả lời => request TREO
         #           (đúng hành vi của iptables DROP ở tầng app)
         # stop    : SIGKILL -> cổng đóng => ConnectError ngay
-        os.kill(pid, signal.SIGSTOP if mode == "netblock" else signal.SIGKILL)
+        _signal(pid, "STOP" if mode == "netblock" else "KILL")
     else:
         svc = f"serving-{region}"
         if mode == "stop":
@@ -111,7 +133,7 @@ def restore(region: str, backend: str):
     if backend == "bare":
         pid = pid_of(region)
         if pid:
-            os.kill(pid, signal.SIGCONT)
+            _signal(pid, "CONT")
             return event(action="restore", region=region, method="SIGCONT", pid=pid)
         return event(action="restore", region=region, method="need_manual_start",
                      note="process da bi SIGKILL, chay `make up-bare` lai")
